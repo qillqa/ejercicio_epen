@@ -19,7 +19,6 @@ output:
     code_folding: show
 ---
 
-<!-- Elias -->
 <!-- Librerias -->
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
 library(tidyverse)
@@ -957,8 +956,7 @@ Por qué no: Aunque es categórica, tiene demasiados niveles (departamentos), lo
 
 
 
-<!-- Rodrigo -->
-# Rodrigo
+# Construcción de indicadores
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
 # Leer los datos
 file_path <- "epen2023.csv"
@@ -1178,8 +1176,6 @@ text(y = promedio_por_formalidad$INGTOT - (promedio_por_formalidad$INGTOT * 0.05
      col = "black", cex = 0.8)  # Colocamos el texto en blanco para que contraste con el color de la barra
 ```
 
-
-<!-- Lucia -->
 ```{r, echo=FALSE}
 rm(list = ls()) 
 
@@ -1252,7 +1248,7 @@ G_original <- ggplot(EPEN_Data, aes(x = whoraT)) +
   )
 ```
 
-# Transformación logarítmica
+## Transformación logarítmica
 
 ```{r, echo=FALSE}
 G_log <- ggplot(EPEN_Data, aes(x = log1p(whoraT))) +
@@ -1266,7 +1262,6 @@ G_log <- ggplot(EPEN_Data, aes(x = log1p(whoraT))) +
 grid.arrange(G_original, G_log, ncol = 2)
 ```
 
-# Construcción de indicadores ##
 ## 1. Tasa de Informalidad Nacional 
 
 ```{r, echo=FALSE}
@@ -1287,7 +1282,6 @@ Distribucion_informalidad_sexo <- EPEN_Data %>%
 print(Distribucion_informalidad_sexo)
 ```
 
-### Gráfico 
 ```{r, echo=FALSE}
 
 G1 <- ggplot(Distribucion_informalidad_sexo, aes(x = C207, y = Proporcion_informal, fill = C207)) +
