@@ -1,0 +1,10 @@
+install.packages("tidyverse")
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("glue")
+install.packages("RColorBrewer")
+install.packages("flextable")
+install.packages("ggmosaic")
+install.packages("corrplot")
+install.packages("gridExtra")
+

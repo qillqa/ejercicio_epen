@@ -1,30 +1,1403 @@
 ---
-title: "EPEN"
-author: "Lucia Quintana, Rodrigo Urizar y Elias Alarcón"
-date: "2025-01-14"
-output: html_document
+title: "Indicadores EPEN"
+author:
+  - name: "Lucía Quintana"
+  - name: "Rodrigo Urizar"
+  - name: "Elias Alarcón"
+    affiliation: "UNIVERSIDAD CONTINENTAL - MAESTRÍA EN CIENCIA DE DATOS"
+date: "18 de enero del 2025"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    collapsed: true
+    smooth_scroll: true
+    theme: journal
+    highlight: kate
+    df_print: paged
+    code_folding: show
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+<!-- Elias -->
+<!-- Librerias -->
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(glue)
+library(RColorBrewer)
+library(flextable)
+library(corrplot)
+library(gridExtra)
 ```
 
-## R Markdown
+<!-- Funciones -->
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# Función para generar tabla de frecuencias
+crear_tabla_frecuencias <- function(datos, columna, areas) {
+  # Crear la tabla de frecuencias
+  freq <- table(datos[[columna]])
+  
+  # Convertir a data frame
+  freq_df <- as.data.frame(freq)
+  
+  # Renombrar las columnas
+  colnames(freq_df) <- c(columna, "Frecuencia")
+  
+  # Calcular el porcentaje
+  freq_df$Porcentaje <- (freq_df$Frecuencia / sum(freq_df$Frecuencia)) * 100
+  
+  # Unir la tabla de frecuencias con los nombres de las categorias
+  freq_df <- merge(freq_df, areas, by = columna)
+  
+  # Ordenar por la columna 'Frecuencia' de mayor a menor
+  result <- freq_df %>% 
+    arrange(desc(Frecuencia))
+  
+  # Retornar el resultado
+  return(result)
+}
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+crear_grafico_barras_t1 <- function(datos, cat_1, var_1, var_descrip_1, title_descrip) {
+  
+  # Crear tabla de frecuencias para la única variable que queremos mostrar en el gráfico
+  tabla_frecuencias <- table(datos[[var_1]])
+  tabla_frecuencias_df <- as.data.frame(tabla_frecuencias)
+  colnames(tabla_frecuencias_df) <- c(var_1, "Frecuencia")
+  
+  # Calcular el total de las frecuencias para obtener el porcentaje
+  total_frecuencias <- sum(tabla_frecuencias_df$Frecuencia)
+  
+  # Calcular el porcentaje para cada barra
+  tabla_frecuencias_df$Porcentaje <- (tabla_frecuencias_df$Frecuencia / total_frecuencias) * 100
+  
+  # Unir con las descripciones
+  tabla_frecuencias_df <- merge(tabla_frecuencias_df, cat_1, by = var_1)
+  
+  # Reordenar las categorías de mayor a menor por Frecuencia
+  tabla_frecuencias_df[[var_descrip_1]] <- factor(tabla_frecuencias_df[[var_descrip_1]],
+                                              levels = tabla_frecuencias_df[[var_descrip_1]][order(tabla_frecuencias_df$Frecuencia, decreasing = TRUE)])
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+  # Gráfico de barras con las frecuencias de la variable
+  ggplot(tabla_frecuencias_df, aes(x = !!sym(var_descrip_1), y = Frecuencia, fill = !!sym(var_descrip_1))) +
+    geom_bar(stat = "identity") +
+    # Agregar los valores de frecuencia sobre las barras
+    geom_text(aes(label = paste(Frecuencia, "\n(", round(Porcentaje, 1), "%)", sep = "")),
+              vjust = -0.3, size = 4, color = "black") +  # Mostrar Frecuencia y Porcentaje
+              # vjust = 0.5, size = 4, color = "black") +  # Mostrar Frecuencia y Porcentaje en el centro
+    labs(
+      title = title_descrip,
+      x = "",
+      y = "Frecuencia",
+      fill = ""
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 70, hjust = 1),  # Rotar etiquetas del eje X
+      legend.position = "none",  # Eliminar la leyenda
+      plot.title = element_text(size = 18, hjust = 0.5, face = "bold")  # Aumentar el tamaño del título y centrarlo
+    ) + ylim(0, max(tabla_frecuencias_df$Frecuencia) * 1.3)  # Aumentar espacio arriba de las barras
+}
 
-```{r cars}
-summary(cars)
+crear_tabla_contingencia <- function(datos, var1, var2, proporciones = FALSE, eliminar_na = TRUE) {
+  # Validar que las variables existan en los datos
+  if (!(var1 %in% colnames(datos)) || !(var2 %in% colnames(datos))) {
+    stop("Alguna de las variables especificadas no existe en los datos.")
+  }
+  
+  # Eliminar valores nulos si se especifica
+  if (eliminar_na) {
+    datos <- datos[!is.na(datos[[var1]]) & !is.na(datos[[var2]]), ]
+  }
+  
+  # Crear tabla de contingencia básica
+  tabla <- table(datos[[var1]], datos[[var2]])
+  
+  # Calcular proporciones si es necesario
+  if (proporciones) {
+    tabla <- prop.table(tabla, margin = 1) # Proporción por fila
+  }
+  
+  # Convertir la tabla en un data frame para mejor visualización
+  tabla_df <- as.data.frame.matrix(tabla)
+  
+  # Agregar nombres de las variables
+  colnames(tabla_df) <- paste(var2, colnames(tabla_df), sep = " ")
+  rownames(tabla_df) <- paste(var1, rownames(tabla), sep = " ")
+  
+  # Mostrar la tabla
+  print(tabla_df)
+  
+  # Retornar la tabla (opcional para uso posterior)
+  # return(tabla_df)
+}
+
+crear_grafico_barras_contingencia_text <- function(datos, cat_1, cat_2, var_1, var_2, var_descrip_1, var_descrip_2, title_descrip, x_descrip_2, fill_descrip_1) {
+
+# Crear tabla de contingencia
+tabla_contingencia <- table(datos[[var_1]], datos[[var_2]])
+tabla_contingencia_df <- as.data.frame(tabla_contingencia)
+colnames(tabla_contingencia_df) <- c(var_1, var_2, "Frecuencia")
+
+# Unir con las descripciones
+tabla_contingencia_df <- merge(tabla_contingencia_df, cat_1, by = var_1)
+tabla_contingencia_df <- merge(tabla_contingencia_df, cat_2, by = var_2)
+
+# Gráfico de barras apilado con literales descriptivos
+ggplot(tabla_contingencia_df, aes(x = !!sym(var_descrip_2), y = Frecuencia, fill = !!sym(var_descrip_1))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = title_descrip,
+    x = x_descrip_2,
+    y = "Frecuencia",
+    fill = fill_descrip_1
+  ) +
+  theme_minimal() +
+  # theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 10, margin = margin(t = 10)))  # Rotar etiquetas del eje X
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1), # Rotar etiquetas del eje X
+    plot.title = element_text(size = 18, hjust = 0.5, face = "bold")  # Aumentar el tamaño del título y centrarlo
+    )
+}
 ```
 
-## Including Plots
+___
+# Base de datos EPEN
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# Leer los datos
+file_path <- "epen2023.csv"
+datos <- read.csv(file_path, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+# Mostrar las primeras filas
+head(datos)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Estructura general
+
+```{r, echo=FALSE}
+str(datos)
+```
+
+
+
+## Resumen estadístico
+
+```{r, echo=FALSE}
+summary(datos)
+```
+
+```{r, echo=FALSE}
+# Variables disponibles:
+# CCDD: Código de región (categoría)
+# AREA: Área de residencia (categoría)
+# C207: Sexo (categoría)
+# C208: Edad (continua)
+# C310: Ocupación principal (categoría)
+# C311: Trabajo (categoría)
+# whoraT: Horas trabajadas (continua)
+# C366: Grado de estudio (categoría)
+# C377: Etnicidad (categoría)
+# OCUP300: Nivel de ocupación (categoría)
+# INGTOT: Ingreso mensual (continua)
+# Informal_P: Situación de informalidad (categoría)
+```
+
+___
+
+
+# Tablas de frecuencia
+
+## Tabla de frecuencia de Región (CCDD)
+
+```{r, echo=FALSE}
+regiones <- data.frame(
+  CCDD = c("1", "2", "3", "4", "5", 
+           "6", "7", "8", "9", "10", 
+           "11", "12", "13", "14", "15", 
+           "16", "17", "18", "19", "20", 
+           "21", "22", "23", "24", "25", "NA"),
+  CCDD_descrip = c("1-AMAZONAS", "2-ANCASH", "3-APURIMAC", "4-AREQUIPA", "5-AYACUCHO", 
+               "6-CAJAMARCA", "7-CALLAO", "8-CUSCO", "9-HUANCAVELICA", "10-HUANUCO", 
+               "11-ICA", "12-JUNIN", "13-LA LIBERTAD", "14-LAMBAYEQUE", "15-LIMA", 
+               "16-LORETO", "17-MADRE DE DIOS", "18-MOQUEGUA", "19-PASCO", "20-PIURA",
+               "21-PUNO", "22-SAN MARTIN", "23-TACNA", "24-TUMBES", "25-UCAYALI", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$CCDD <- ifelse(is.na(datos$CCDD), "NA", as.character(datos$CCDD))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "CCDD", regiones)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = regiones,
+  var_1 = "CCDD",
+  var_descrip_1 = "CCDD_descrip",
+  title_descrip = "Frecuencias de Regiones"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que Lima tiene la mayor cantidad de personas con 43151 lo cual representa un 15.5%. En segundo lugar San Martin con 18125 y tercer lugar Ancash con 15524. El resto de regiones sus valores oscilan entre 13000 y 7000 aproximadamente. La menos cantidad de personas la tiene Moquegua con 7835.
+
+
+
+## Tabla de frecuencia de Área de Residencia (AREA)
+
+```{r, echo=FALSE}
+areas <- data.frame(
+  AREA = c("1", "2", "NA"),
+  AREA_descrip = c("1-Urbano", "2-Rural", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$AREA <- ifelse(is.na(datos$AREA), "NA", as.character(datos$AREA))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "AREA", areas)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = areas,
+  var_1 = "AREA",
+  var_descrip_1 = "AREA_descrip",
+  title_descrip = "Frecuencias de Área de Residencia"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la poblacion que vive en una area Urbana es de 253108 y esto corresponde al 90.7%. El resto de personas viven en una area Rural y esto corresponde al 9.3% del total. Es evidente la diferencia entre el tamaño de las muestras, la muestra del area Urbana es 10 veces la muestra del area Rural.
+
+
+
+## Tabla de frecuencia de Personas por Sexo (C207)
+
+```{r, echo=FALSE}
+sexos <- data.frame(
+  C207 = c("1", "2", "NA"),
+  C207_descrip = c("1-Hombre", "2-Mujer", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$C207 <- ifelse(is.na(datos$C207), "NA", as.character(datos$C207))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "C207", sexos)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = sexos,
+  var_1 = "C207",
+  var_descrip_1 = "C207_descrip",
+  title_descrip = "Frecuencias de Personas por Sexo"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la poblacion de sexo femenino supera a los hombre por 17806. En porcentaje la poblacion femenina corresponde al 53.2% y la masculina al 46.8%. La diferencia entre cantidad de hombres y mujeres no es muy grande.
+
+
+
+## Tabla de frecuencia de Ocupación Principal (C310)
+
+```{r, echo=FALSE}
+ocupaciones <- data.frame(
+  C310 = c("1", "2", "3", "4", "5", "6", "7", "8", "NA"),
+  C310_descrip = c("1-Empleador o patrono", 
+                   "2-Trabajador independiente", 
+                   "3-Empleado u obrero", 
+                   "4-Ayudante en un negocio de la familia", 
+                   "5-Ayudante en el empleo de un familiar", 
+                   "6-Trabajador del hogar", 
+                   "7-Aprendiz/practicante remunerado", 
+                   "8-Practicante sin remuneración", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$C310 <- ifelse(is.na(datos$C310), "NA", as.character(datos$C310))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "C310", ocupaciones)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = ocupaciones,
+  var_1 = "C310",
+  var_descrip_1 = "C310_descrip",
+  title_descrip = "Frecuencias de Ocupación Principal"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la gente que se desempeñó - en su ocupación principal o negocio - como "Empleado u obrero" tiene la mayor frecuencia con 32.7%, en segundo lugar "Sin respuesta" con 32%, en tercer lugar "Trabajador independiente" con 23.1%. Se observa una cantidad considerable de valores nulos (Sin respuesta) cuya diferencia con "Empleado u obrero" es minima (0.7%). Se tendra en cuenta la cantidad considerable de valores nulos al momento de procesar los datos.
+
+
+
+## Tabla de frecuencia de En su ocupación principal trabajo para (C311)
+
+```{r, echo=FALSE}
+ocupaciones_para <- data.frame(
+  C311 = c("1", "2", "3", "4", "5", "6", "NA"),
+  C311_descrip = c("1-Fuerzas Armadas, Policía Nacional del Perú (militares)", 
+                   "2-Administración pública", 
+                   "3-Empresa pública", 
+                   "4-Empresas especiales de servicios (SERVICE)", 
+                   "5-Empresa o patrono privado", 
+                   "6-Otra", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$C311 <- ifelse(is.na(datos$C311), "NA", as.character(datos$C311))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "C311", ocupaciones_para)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = ocupaciones_para,
+  var_1 = "C311",
+  var_descrip_1 = "C311_descrip",
+  title_descrip = "Frecuencias de En su ocupación principal trabajo para..."
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la gente que no respondio a la pregunta 311 representa un 66.9%. La gente que eligio la opcion "Empresa o patrono privado" tiene 23% y "Administración pública" tiene un 8.4%, el resto de opciones tiene menos del 1%. Se tendra en cuenta la excesiva cantidad de valores nulos (66.9%) al momento de procesar los datos.
+
+
+
+## Tabla de frecuencia por Nivel Educativo (C366)
+
+```{r, echo=FALSE}
+niveles_edu <- data.frame(
+  C366 = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "NA"),
+  C366_descrip = c("1-Sin nivel", 
+                   "2-Educación Inicial", 
+                   "3-Primaria incompleta", 
+                   "4-Primaria completa", 
+                   "5-Secundaria incompleta", 
+                   "6-Secundaria completa", 
+                   "7-Básica especial", 
+                   "8-Superior no universitaria incompleta", 
+                   "9-Superior no universitaria completa", 
+                   "10-Superior universitaria incompleta", 
+                   "11-Superior universitaria completa", 
+                   "12-Maestría/Doctorado", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$C366 <- ifelse(is.na(datos$C366), "NA", as.character(datos$C366))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "C366", niveles_edu)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = niveles_edu,
+  var_1 = "C366",
+  var_descrip_1 = "C366_descrip",
+  title_descrip = "Frecuencias de Nivel Educativo"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la mayor cantidad de personas tiene "Secundaria completa" y representa un 26.2%. En segundo lugar tenemos "Secundaria incompleta" con 16.6%. En tercer lugar con una diferencia minima tenemos a "Superior universitaria completa" (11.8%) y "Superior no universitaria completa" (11.5%). En este caso los valores nulos (Sin respuesta) solo representan el 3.6%.
+
+
+## Tabla de frecuencia por Etnicidad (C377)
+
+```{r, echo=FALSE}
+etnicidad <- data.frame(
+  C377 = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "NA"),
+  C377_descrip = c("1-Quechua", 
+                   "2-Aymara", 
+                   "3-Nativo o Indígena de la Amazonía", 
+                   "4-Perteneciente o parte de otro\n pueblo indígena originario", 
+                   "5-Negro/Moreno/Zambo/Mulato/Pueblo\n Afro peruano o Afrodescendiente", 
+                   "6-Blanco", 
+                   "7-Mestizo", 
+                   "8-Otro", 
+                   "9-No sabe/No responde", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$C377 <- ifelse(is.na(datos$C377), "NA", as.character(datos$C377))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "C377", etnicidad)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = etnicidad,
+  var_1 = "C377",
+  var_descrip_1 = "C377_descrip",
+  title_descrip = "Frecuencias de Etnicidad"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la mayor cantidad de personas se considera "Mestizo" y representan un 54.9%. En segundo lugar tenemos "Quechua" con 18.6%. La minoria con 0.1% se escogio la opcion "Perteneciente o parte de otro pueblo indígena originario". En este caso los valores nulos (Sin respuesta) solo representan el 3.6%.
+
+
+
+## Tabla de frecuencia por Nivel de Ocupación (OCUP300)
+
+```{r, echo=FALSE}
+niveles_ocup <- data.frame(
+  OCUP300 = c("1", "2", "3", "4", "NA"),
+  OCUP300_descrip = c("1-Ocupado", 
+                      "2-Desempleado Abierto", 
+                      "3-Desempleado Oculto", 
+                      "4-Inactivos", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$OCUP300 <- ifelse(is.na(datos$OCUP300), "NA", as.character(datos$OCUP300))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "OCUP300", niveles_ocup)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = niveles_ocup,
+  var_1 = "OCUP300",
+  var_descrip_1 = "OCUP300_descrip",
+  title_descrip = "Frecuencias de Nivel de Ocupación"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la mayor cantidad de personas tiene el nivel de ocupación "Ocupado" y representan un 65.5%. En segundo lugar tenemos "Inactivos" con 24.5%. "Desempleado Abierto" y "Desempleado Oculto" representan el 6.4%. En este caso los valores nulos (Sin respuesta) solo representan el 3.6%.
+
+
+
+## Tabla de frecuencia por Situación de informalidad (ocupación principal) (Informal_P)
+
+```{r, echo=FALSE}
+situaciones <- data.frame(
+  Informal_P = c("1", "2", "NA"),
+  Informal_P_descrip = c("1-Empleo Informal", "2-Empleo Formal", "Sin respuesta")
+)
+```
+
+```{r, echo=FALSE}
+datos$Informal_P <- ifelse(is.na(datos$Informal_P), "NA", as.character(datos$Informal_P))
+tabla_frecuencias <- crear_tabla_frecuencias(datos, "Informal_P", situaciones)
+print(tabla_frecuencias)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_t1(
+  datos = datos,
+  cat_1 = situaciones,
+  var_1 = "Informal_P",
+  var_descrip_1 = "Informal_P_descrip",
+  title_descrip = "Frecuencias de Situación de informalidad (ocupación principal)"
+)
+```
+
+> **Nota:**<br>
+Los datos nos permite observar que la mayor cantidad de personas tiene "Empleo Informal" y representan un 46.7%. En segundo lugar tenemos "Empleo Formal" con 21.2%. En este caso los valores nulos (Sin respuesta) representan el 32%, lo cual es una cantidad considerable y se tendra en cuenta al momento de procesar los datos.
+
+
+___
+# Histogramas
+
+## Histograma de Edad (C208)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Histograma con diferentes valores de breaks
+par(mfrow = c(2, 2))  # Múltiples gráficos en una ventana
+
+# 10 intervalos (general)
+hist(datos$C208, breaks = 10, col = "lightblue",
+     main = "Histograma con breaks = 10",
+     xlab = "Edad", ylab = "Frecuencia")
+
+# 20 intervalos (más detalle)
+hist(datos$C208, breaks = 20, col = "lightcoral",
+     main = "Histograma con breaks = 20",
+     xlab = "Edad", ylab = "Frecuencia")
+
+# 30 intervalos (balanceado)
+hist(datos$C208, breaks = 30, col = "lightgreen",
+     main = "Histograma con breaks = 30",
+     xlab = "Edad", ylab = "Frecuencia")
+
+# Freedman-Diaconis
+hist(datos$C208, breaks = "FD", col = "lightgoldenrod",
+     main = "Histograma con breaks = 'FD'",
+     xlab = "Edad", ylab = "Frecuencia")
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Histograma agrupado
+hist(datos$C208, breaks = 30, col = "lightgreen",
+     main = "",
+     xlab = "Edad", ylab = "Frecuencia")
+# Agregar el título con tamaño 16 y centrado
+title(main = "Histograma con breaks = 30", cex.main = 1.6, adj = 0.5)
+```
+
+> **Nota:**<br>
+La barra más alta se encuentra en el intervalo entre los 20 y 25 años.<br>
+Después del pico inicial, la frecuencia disminuye gradualmente a medida que la edad aumenta.<br>
+Hay una distribución relativamente uniforme entre los 30 y 50 años, aunque sigue una tendencia decreciente en general.<br>
+A partir de los 50 años, la frecuencia disminuye significativamente, indicando que hay menos personas en los intervalos de edades más altas.
+
+
+
+## Histograma de Número total de horas trabajadas (whoraT)
+
+```{r, echo=FALSE}
+# Histograma con breaks = 30
+# histograma <- hist(datos$whoraT, breaks = 30, plot = FALSE)
+
+# Imprime los intervalos utilizados
+# print(histograma$breaks)  # Muestra los límites de cada intervalo
+# print(length(histograma$breaks) - 1)  # Número de intervalos/barras
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Histograma con diferentes valores de breaks
+par(mfrow = c(2, 2))  # Múltiples gráficos en una ventana
+
+# 10 intervalos (general)
+hist(datos$whoraT, breaks = 10, col = "lightblue",
+     main = "Histograma con breaks = 10",
+     xlab = "Horas Trabajadas", ylab = "Frecuencia")
+
+# 30 intervalos (balanceado)
+hist(datos$whoraT, breaks = 30, col = "lightgreen",
+     main = "Histograma con breaks = 30",
+     xlab = "Horas Trabajadas", ylab = "Frecuencia")
+
+# 50 intervalos (más detalle)
+hist(datos$whoraT, breaks = 50, col = "lightcoral",
+     main = "Histograma con breaks = 50",
+     xlab = "Horas Trabajadas", ylab = "Frecuencia")
+
+# Freedman-Diaconis
+hist(datos$whoraT, breaks = "FD", col = "lightgoldenrod",
+     main = "Histograma con breaks = 'FD'",
+     xlab = "Horas Trabajadas", ylab = "Frecuencia")
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Histograma agrupado
+hist(datos$whoraT, breaks = 50, col = "lightgreen",
+     main = "",
+     xlab = "Horas Trabajadas", ylab = "Frecuencia")
+# Agregar el título con tamaño 16 y centrado
+title(main = "Histograma con breaks = 50", cex.main = 1.6, adj = 0.5)
+```
+
+> **Nota:**<br>
+La distribución tiene una forma aproximadamente normal con un ligero sesgo hacia la derecha.
+La mayor frecuencia está concentrada entre 40 y 50 horas trabajadas.
+Hay menos personas trabajando muy pocas horas (menos de 20) o muchas horas (más de 60), lo que refleja una disminución progresiva de la frecuencia hacia los extremos del gráfico.<br>
+**En resumen:**<br>
+La mayoría de las personas trabajan entre 40 y 50 horas.
+Hay un grupo considerable de personas trabajando entre 20 y 40 horas.
+Los casos con muchas horas trabajadas (más de 60) son raros, pero existen.
+Esta distribución podría reflejar diferentes tipos de empleo, como trabajos a tiempo parcial, completo, y jornadas extendidas.
+
+
+
+## Histograma de Ingreso mensual, ocupación principal y secundaria sin ingresos extraordinarios (INGTOT)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Histograma con diferentes valores de breaks
+par(mfrow = c(2, 2))  # Múltiples gráficos en una ventana
+
+# 50 intervalos
+hist(datos$INGTOT, breaks = 50, col = "lightcoral",
+     main = "Histograma con breaks = 50",
+     xlab = "Ingreso mensual", ylab = "Frecuencia")
+
+# 70 intervalos
+hist(datos$INGTOT, breaks = 70, col = "lightblue",
+     main = "Histograma con breaks = 70",
+     xlab = "Ingreso mensual", ylab = "Frecuencia")
+
+# 100 intervalos
+hist(datos$INGTOT, breaks = 100, col = "lightgreen",
+     main = "Histograma con breaks = 100",
+     xlab = "Ingreso mensual", ylab = "Frecuencia")
+
+# Freedman-Diaconis
+hist(datos$INGTOT, breaks = "FD", col = "lightgoldenrod",
+     main = "Histograma con breaks = 'FD'",
+     xlab = "Ingreso mensual", ylab = "Frecuencia")
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# 100 intervalos
+hist(datos$INGTOT, breaks = 100, col = "lightgreen",
+     main = "",
+     xlab = "Ingreso mensual", ylab = "Frecuencia")
+# Agregar el título con tamaño 16 y centrado
+title(main = "Histograma con breaks = 100", cex.main = 1.6, adj = 0.5)
+```
+
+> **Nota:**<br>
+La distribución está sesgada hacia la derecha, lo que indica que la mayoría de las personas tienen ingresos bajos y hay pocos casos con ingresos muy altos. La mayor frecuencia de ingresos está concentrada cerca del extremo izquierdo, alrededor de los valores más bajos en el rango cercano a 0 y 10,000.<br>
+**En resumen:**<br>
+Una gran cantidad de personas tienen ingresos bajos (reflejado por las barras altas al principio)<br>
+Los ingresos altos son menos frecuentes (reflejado por las barras bajas hacia la derecha del gráfico).
+
+
+
+___
+# Gráficos Scatter
+
+## Gráficos Scatter de Edad (C208) vs Ingreso Mensual (INGTOT)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+plot(datos$C208, datos$INGTOT, 
+     main = "Scatter de Edad vs Ingreso Mensual",
+     xlab = "Edad", 
+     ylab = "Ingreso Mensual", 
+     col = "blue", pch = 16,
+     cex.main = 1.6)  # Aumentar el tamaño del título
+```
+
+> **Nota:**<br>
+<br>**- Distribución por Edad:**<br>
+Los datos de edad abarcan desde los 20 hasta los 60 años, con una densidad uniforme de puntos a lo largo de este rango.
+Esto sugiere que los ingresos están distribuidos en un amplio rango de edades, sin un grupo claramente dominante.
+<br>**- Ingreso Mensual:**<br>
+La mayoría de los ingresos mensuales se concentran por debajo de los 10,000. A medida que los ingresos aumentan, la densidad de puntos disminuye significativamente.
+Se observan valores atípicos (outliers), donde algunos individuos presentan ingresos muy altos, superando los 50,000, lo que indica casos especiales o excepcionales.
+<br>**- Relación entre Edad e Ingreso:**<br>
+En general, no se observa una tendencia lineal clara entre edad e ingreso mensual.<br>
+Para edades jóvenes (20-30 años): Los ingresos tienden a ser menores, aunque existen algunos valores atípicos de ingresos altos.<br>
+Para edades intermedias (30-50 años): Hay una mayor dispersión en los ingresos, incluyendo más casos de ingresos elevados. Esto podría corresponder a una etapa de madurez profesional.<br>
+Para edades mayores (50-60 años): Aunque hay dispersión, los ingresos parecen estabilizarse, y los valores altos son menos frecuentes.
+<br>**- Atípicos (Outliers):**<br>
+Algunos individuos tienen ingresos considerablemente superiores al promedio, independientemente de la edad. Esto podría deberse a factores externos como ocupaciones altamente remuneradas.
+<br><br>**Conclusión:**<br>
+El ingreso mensual no está fuertemente correlacionado con la edad. Aunque hay una ligera tendencia a que los ingresos sean más diversos y altos entre los 30 y los 50 años, los valores extremos sugieren que otros factores (como nivel educativo, ocupación o experiencia) son determinantes más importantes para el ingreso.
+
+
+## Gráficos Scatter de Horas trabajadas (whoraT) vs Ingreso Mensual (INGTOT)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+plot(datos$whoraT, datos$INGTOT, 
+     main = "Scatter de Horas Trabajadas vs Ingreso Mensual",
+     xlab = "Horas Trabajadas", 
+     ylab = "Ingreso Mensual", 
+     col = "green", pch = 16,
+     cex.main = 1.6)  # Aumentar el tamaño del título
+```
+
+> **Nota:**<br>
+<br>**- Concentración principal:**<br>
+La mayoría de los puntos se agrupan en la región entre 0 y 100 horas trabajadas.
+Los ingresos mensuales predominan entre 0 y 10,000, con algunas observaciones por encima de este rango.
+<br>**- Rango de valores extremos:**<br>
+Existen valores atípicos (outliers), tanto en términos de ingresos elevados (por encima de 50,000) como de horas trabajadas (superando las 100 horas).
+<br>**- Relación entre las variables:**<br>
+No parece haber una relación lineal clara entre las horas trabajadas y el ingreso mensual en este gráfico.
+Aunque se podría esperar un incremento en ingresos con más horas trabajadas, el gráfico muestra una alta dispersión, sugiriendo que otros factores podrían estar influyendo en los ingresos.
+<br><br>**Posibles interpretaciones:**<br>
+Factores adicionales: Es posible que el ingreso no dependa solo de las horas trabajadas, sino también del tipo de trabajo, la productividad o la tarifa por hora.
+Datos extremos: Los valores atípicos, como personas con ingresos altos y pocas horas trabajadas, o muchas horas trabajadas con ingresos bajos, podrían corresponder a casos específicos (por ejemplo, salarios por comisión o voluntarios).
+
+
+## Gráficos Scatter de Edad (C208) vs Horas trabajadas (whoraT)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+plot(datos$C208, datos$whoraT, 
+     main = "Scatter de Edad vs Horas Trabajadas",
+     xlab = "Edad", 
+     ylab = "Horas Trabajadas", 
+     col = "green", pch = 16,
+     cex.main = 1.6)  # Aumentar el tamaño del título
+```
+
+> **Nota:**<br>
+<br>**- Distribución uniforme de horas trabajadas:**<br>
+Para todas las edades, las horas trabajadas tienden a agruparse entre 0 y 100, con un pequeño número de observaciones que superan este rango (valores atípicos).
+<br>**- Relación entre edad y horas trabajadas:**<br>
+No se observa una tendencia clara o una relación evidente entre la edad y las horas trabajadas.
+Esto sugiere que la cantidad de horas trabajadas es relativamente independiente de la edad.
+<br>**- Valores atípicos:**<br>
+Hay puntos aislados que muestran personas con muchas horas trabajadas (superiores a 150), especialmente en edades entre 20 y 50 años.
+<br>**- Rango de edades:**<br>
+El gráfico incluye personas de 18 años aproximadamente hasta los 65 años, lo que podría representar una población económicamente activa.
+<br><br>**Posibles conclusiones:**<br>
+Factores externos: Dado que las horas trabajadas no dependen directamente de la edad, otros factores como el tipo de trabajo, la industria o la flexibilidad laboral pueden influir más en la cantidad de horas trabajadas.<br>
+Regularidad en horas trabajadas: La mayoría de las personas trabajan un número estándar de horas independientemente de su edad, probablemente relacionado con normas laborales.
+
+
+___
+
+___
+# Tablas de Contingencia
+
+## Tabla de Contingencia: AREA (Área de residencia) vs. C207 (Sexo):
+
+```{r, echo=FALSE}
+# Si no quieres eliminar valores nulos
+crear_tabla_contingencia(datos, var1 = "AREA", var2 = "C207", eliminar_na = FALSE)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_contingencia_text(
+  datos = datos,
+  cat_1 = sexos,
+  cat_2 = areas,
+  var_1 = "C207",
+  var_2 = "AREA",
+  var_descrip_1 = "C207_descrip",
+  var_descrip_2 = "AREA_descrip",
+  title_descrip = "Área de Residencia vs Sexo",
+  x_descrip_2 = "Área de Residencia",
+  fill_descrip_1 = "Sexo"
+)
+```
+
+> **Nota:**<br>
+Este gráfico permite observar cómo se distribuyen los géneros en áreas rurales y urbanas.
+<br>Útil para identificar patrones demográficos básicos.
+
+
+
+## Tabla de Contingencia: C366 (Grado de estudio) vs. Informal_P (Situación de informalidad):
+
+```{r, echo=FALSE}
+# Si no quieres eliminar valores nulos
+crear_tabla_contingencia(datos, var1 = "C366", var2 = "Informal_P", eliminar_na = FALSE)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_contingencia_text(
+  datos = datos,
+  cat_1 = situaciones,
+  cat_2 = niveles_edu,  
+  var_1 = "Informal_P",
+  var_2 = "C366",
+  var_descrip_1 = "Informal_P_descrip",
+  var_descrip_2 = "C366_descrip",     
+  title_descrip = "Grado de estudio vs. Situación de informalidad",
+  x_descrip_2 = "Grado de estudio",
+  fill_descrip_1 = "Situación de informalidad"
+)
+```
+
+> **Nota:**<br>
+Este gráfico ayuda a entender si el nivel educativo está relacionado con la informalidad laboral.
+<br>Este cruce puede apoyar investigaciones sobre educación e inclusión en el empleo formal.
+
+
+
+## Tabla de Contingencia: C310 (Ocupación principal) vs. OCUP300 (Nivel de ocupación):
+
+```{r, echo=FALSE}
+# Si no quieres eliminar valores nulos
+crear_tabla_contingencia(datos, var1 = "C310", var2 = "OCUP300", eliminar_na = FALSE)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_contingencia_text(
+  datos = datos,
+  cat_1 = niveles_ocup,
+  cat_2 = ocupaciones,    
+  var_1 = "OCUP300",
+  var_2 = "C310",
+  var_descrip_1 = "OCUP300_descrip",
+  var_descrip_2 = "C310_descrip",   
+  title_descrip = "Ocupación principal vs. Nivel de ocupación",
+  x_descrip_2 = "Ocupación principal",
+  fill_descrip_1 = "Nivel de ocupación"
+)
+```
+
+> **Nota:**<br>
+Este gráfico ayuda a ver como se relaciona las ocupaciones específicas con su nivel de ocupación.
+<br>Es importante para clasificar ocupaciones según el nivel de ocupación laboral.
+
+
+
+## Tabla de Contingencia: C207 (Sexo) vs. C366 (Grado de estudio):
+
+```{r, echo=FALSE}
+# Si no quieres eliminar valores nulos
+crear_tabla_contingencia(datos, var1 = "C366", var2 = "C207", eliminar_na = FALSE)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_contingencia_text(
+  datos = datos,
+  cat_1 = sexos,
+  cat_2 = niveles_edu,   
+  var_1 = "C207",
+  var_2 = "C366",
+  var_descrip_1 = "C207_descrip",
+  var_descrip_2 = "C366_descrip",  
+  title_descrip = "Grado de estudio vs. Sexo",
+  x_descrip_2 = "Grado de estudio",
+  fill_descrip_1 = "Sexo"
+)
+```
+
+> **Nota:**<br>
+Este gráfico ayuda a explorar las diferencias educativas entre hombres y mujeres.
+<br>Puede ser útil para políticas de equidad educativa.
+
+
+
+## Tabla de Contingencia: C377 (Etnicidad) vs. AREA (Área de residencia):
+
+```{r, echo=FALSE}
+# Si no quieres eliminar valores nulos
+crear_tabla_contingencia(datos, var1 = "C377", var2 = "AREA", eliminar_na = FALSE)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_contingencia_text(
+  datos = datos,
+  cat_1 = areas,
+  cat_2 = etnicidad, 
+  var_1 = "AREA",
+  var_2 = "C377",
+  var_descrip_1 = "AREA_descrip",
+  var_descrip_2 = "C377_descrip",
+  title_descrip = "Etnicidad vs. Área de residencia",
+  x_descrip_2 = "Etnicidad",
+  fill_descrip_1 = "Área de residencia"
+)
+```
+
+> **Nota:**<br>
+Este gráfico muestra la distribución étnica en zonas urbanas y rurales.
+<br>Ayuda en el diseño de políticas interculturales y de desarrollo regional.
+
+
+
+## Tabla de Contingencia: C311 (Lugar de trabajo o tipo de entidad) vs. Informal_P (Situación de informalidad):
+
+```{r, echo=FALSE}
+# Si no quieres eliminar valores nulos
+crear_tabla_contingencia(datos, var1 = "C311", var2 = "Informal_P", eliminar_na = FALSE)
+```
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+# Llamar a la función para crear el gráfico
+crear_grafico_barras_contingencia_text(
+  datos = datos,
+  cat_1 = situaciones,
+  cat_2 = ocupaciones_para,  
+  var_1 = "Informal_P",
+  var_2 = "C311",
+  var_descrip_1 = "Informal_P_descrip",
+  var_descrip_2 = "C311_descrip",
+  title_descrip = "Lugar de trabajo o tipo de entidad vs. Situación de informalidad",
+  x_descrip_2 = "Lugar de trabajo o tipo de entidad",
+  fill_descrip_1 = "Situación de informalidad"
+)
+```
+
+> **Nota:**<br>
+Este gráfico ayuda a entender como se relaciona el lugar de trabajo o tipo de entidad con la informalidad laboral.
+<br>Es crucial para entender cómo ciertas lugares de trabajo están más vinculadas con la informalidad.
+
+
+
+## Combinaciones descartadas y razones
+
+**_C208 (Edad) con otras variables:_**<br>
+Por qué no: La edad es una variable continua y no categórica. Para incluirla, tendría que agruparse en rangos (por ejemplo, jóvenes, adultos, mayores), pero esto podría diluir los datos si no es relevante para el análisis.
+
+**_INGTOT (Ingreso mensual) con otras variables:_**<br>
+Por qué no: El ingreso es una variable continua que no encaja bien en tablas de contingencia. Aunque podría agruparse, usar histogramas o gráficos de cajas sería más adecuado para explorar su relación con otras variables.
+
+**_whoraT (Horas trabajadas) con otras variables:_**<br>
+Por qué no: Similar al ingreso, las horas trabajadas son continuas y no se adaptan bien a tablas de contingencia. Es mejor usarlas en gráficos como scatter plots.
+
+**_CCDD (Código de región) vs. otras variables:_**<br>
+Por qué no: Aunque es categórica, tiene demasiados niveles (departamentos), lo que hace que las tablas sean difíciles de interpretar. Podría considerarse si se agrupan regiones en categorías más amplias (por ejemplo, costa, sierra, selva).
+
+
+
+
+
+
+
+<!-- Rodrigo -->
+# Rodrigo
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# Leer los datos
+file_path <- "epen2023.csv"
+datos <- read.csv(file_path, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+
+datos <- datos[, c("MES", "AREA", "CCDD", "C207", "C208", "C310", "C311", "whoraT", "C366", "C377", "OCUP300", "INGTOT", "Informal_P")]
+
+```
+
+```{r, echo=FALSE}
+# Eliminar filas con NA en las columnas Informal_P e INGTOT
+datos <- datos[complete.cases(datos[, c("Informal_P", "INGTOT")]), ]
+
+# Mostrar el resultado
+# print(datos)
+
+```
+## Ingreso Promedio por Región (CCDD)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+
+# Asignar categorías
+
+DEPARTAMENTOS <- data.frame(
+  DEPARTAMENTO = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25),
+  NOMBREDEPARTAMENTO = c("AMAZONAS", "ANCASH", "APURIMAC", "AREQUIPA", 
+               "AYACUCHO", "CAJAMARCA", "CALLAO", "CUSCO", "HUANCAVELICA", 
+               "HUANUCO", "ICA", "JUNIN", "LA LIBERTAD", "LAMBAYEQUE", 
+               "LIMA", "LORETO", "MADRE DE DIOS", "MOQUEGUA", "PASCO", 
+               "PIURA", "PUNO", "SAN MARTIN", "TACNA", "TUMBES", "UCAYALI")
+)
+
+# Calcular el ingreso promedio por región
+promedio_por_region <- aggregate(INGTOT ~ CCDD, data = datos, FUN = mean, na.rm = TRUE)
+
+# Agregar los nombres de las áreas usando la tabla DEPARTAMENTOS
+promedio_por_region <- merge(promedio_por_region, DEPARTAMENTOS, by.x = "CCDD", by.y = "DEPARTAMENTO")
+
+# Ordenar por ingreso promedio de mayor a menor
+promedio_por_region <- promedio_por_region[order(promedio_por_region$INGTOT), ]
+
+# Mostrar el resultado
+print(promedio_por_region)
+
+# Ajustar márgenes para tener suficiente espacio para las etiquetas del eje Y
+par(mar = c(5, 14, 4, 2))  # Aumentar margen izquierdo para tener espacio para etiquetas más largas
+
+# Crear el gráfico de barras horizontal y guardar las posiciones de las barras
+bp <- barplot(promedio_por_region$INGTOT,
+              names.arg = promedio_por_region$NOMBREDEPARTAMENTO,
+              main = "",
+              col = "skyblue",
+              xlab = "Ingreso Promedio",
+              ylab = "",
+              las = 1,  # Ajustar las etiquetas del eje Y
+              horiz = TRUE,  # Hacer el gráfico horizontal
+              cex.names = 0.7)  # Reducir el tamaño de las etiquetas para que quepan todas
+
+# Aumentar el tamaño del título
+title(main = "Ingreso Promedio por Región", cex.main = 1.6)
+
+# Colocar los valores dentro de las barras, cerca del final
+text(x = promedio_por_region$INGTOT - (promedio_por_region$INGTOT * 0.05),  # Ajustar para que quede dentro de la barra
+     y = bp, 
+     labels = round(promedio_por_region$INGTOT, 0),  # Redondear los valores a 2 decimales
+     col = "black", cex = 0.8)  # Colocamos el texto en blanco para que contraste con el color de la barra
+
+```
+
+## Ingreso Promedio por Área (AREA)
+
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+
+# Asignar categorías
+
+AREAS <- data.frame(
+  AREA = c(1, 2),
+  NOMBREAREA = c("URBANO", "RURAL")
+)
+
+# Calcular el ingreso promedio por área
+promedio_por_area <- aggregate(INGTOT ~ AREA, data = datos, FUN = mean, na.rm = TRUE)
+
+# Agregar los nombres de las áreas usando la tabla AREAS
+promedio_por_area <- merge(promedio_por_area, AREAS, by = "AREA")
+
+# Mostrar el resultado
+print(promedio_por_area)
+
+
+bp <- barplot(promedio_por_area$INGTOT,
+        names.arg = promedio_por_area$NOMBREAREA,
+        main = "",
+        col = "skyblue",
+        xlab = "Área",
+        ylab = "Ingreso Promedio",
+        las = 1)
+
+# Aumentar el tamaño del título
+title(main = "Ingreso Promedio por Área", cex.main = 1.6)
+
+# Colocar los valores dentro de las barras, cerca del final
+text(y = promedio_por_area$INGTOT - (promedio_por_area$INGTOT * 0.05),  # Ajustar para que quede dentro de la barra
+     x = bp, 
+     labels = round(promedio_por_area$INGTOT, 0),  # Redondear los valores a 2 decimales
+     col = "black", cex = 0.8)  # Colocamos el texto en blanco para que contraste con el color de la barra
+
+```
+
+## Ingreso Promedio por Sexo (C207)
+
+```{r, echo=FALSE}
+
+# Asignar categorías
+
+SEXOS <- data.frame(
+  SEXO = c(1, 2),
+  NOMBRESEXO = c("HOMBRE", "MUJER")
+)
+
+# Calcular el ingreso promedio por sexo
+promedio_por_sexo <- aggregate(INGTOT ~ C207, data = datos, FUN = mean, na.rm = TRUE)
+
+# Agregar los nombres de las áreas usando la tabla SEXOS
+promedio_por_sexo <- merge(promedio_por_sexo, SEXOS, by.x = "C207", by.y = "SEXO")
+
+# Mostrar el resultado
+print(promedio_por_sexo)
+
+bp <- barplot(promedio_por_sexo$INGTOT,
+        names.arg = promedio_por_sexo$NOMBRESEXO,
+        main = "Ingreso Promedio por Sexo",
+        col = "skyblue",
+        xlab = "Sexo",
+        ylab = "Ingreso Promedio",
+        las = 1)
+
+# Colocar los valores dentro de las barras, cerca del final
+text(y = promedio_por_sexo$INGTOT - (promedio_por_sexo$INGTOT * 0.05),  # Ajustar para que quede dentro de la barra
+     x = bp, 
+     labels = round(promedio_por_sexo$INGTOT, 0),  # Redondear los valores a 2 decimales
+     col = "black", cex = 0.8)  # Colocamos el texto en blanco para que contraste con el color de la barra
+```
+
+## Ingreso Promedio por Nivel Educativo (C366)
+```{r, echo=FALSE}
+
+# Crear las categorías para la variable C366
+datos$NIVEL_EDUCATIVO <- cut(
+  datos$C366,
+  breaks = c(0.5, 1.5, 4.5, 7.5, 11.5, 12.5),
+  labels = c("SIN NIVEL", "PRIMARIO", "SECUNDARIO", "SUPERIOR", "POSGRADO"),
+  right = TRUE
+)
+
+# Calcular el ingreso promedio por nivel educativo
+promedio_por_nivel <- aggregate(INGTOT ~ NIVEL_EDUCATIVO, data = datos, FUN = mean, na.rm = TRUE)
+
+# Ordenar los resultados por ingreso promedio de mayor a menor
+promedio_por_nivel <- promedio_por_nivel[order(-promedio_por_nivel$INGTOT), ]
+
+# Mostrar el resultado
+print(promedio_por_nivel)
+
+# Graficar el barplot
+bp <- barplot(promedio_por_nivel$INGTOT,
+        names.arg = promedio_por_nivel$NIVEL_EDUCATIVO,
+        main = "Ingreso Promedio por Nivel Educativo",
+        col = "skyblue",
+        xlab = "Nivel Educativo",
+        ylab = "Ingreso Promedio",
+        las = 1)  # Etiquetas del eje X en vertical
+
+# Colocar los valores dentro de las barras, cerca del final
+text(y = promedio_por_nivel$INGTOT - (promedio_por_nivel$INGTOT * 0.15),  # Ajustar para que quede dentro de la barra
+     x = bp, 
+     labels = round(promedio_por_nivel$INGTOT, 0),  # Redondear los valores a 2 decimales
+     col = "black", cex = 0.8)  # Colocamos el texto en blanco para que contraste con el color de la barra
+
+```
+
+## Ingreso Promedio por Nivel de Formalidad (Informal_P)
+```{r, fig.width=12, fig.height=6, echo=FALSE}
+
+# Asignar categorías
+
+INFORMALIDAD <- data.frame(
+  INFOR = c(1, 2),
+  NOMBREINFOR = c("INFORMAL", "FORMAL")
+)
+
+# Calcular el ingreso promedio por nivel de formalidad
+promedio_por_formalidad <- aggregate(INGTOT ~ Informal_P, data = datos, FUN = mean, na.rm = TRUE)
+
+# Agregar los nombres de las áreas usando la tabla INFORMALIDAD
+promedio_por_formalidad <- merge(promedio_por_formalidad, INFORMALIDAD, by.x = "Informal_P", by.y = "INFOR")
+
+
+# Mostrar el resultado
+print(promedio_por_formalidad)
+
+bp <- barplot(promedio_por_formalidad$INGTOT,
+        names.arg = promedio_por_formalidad$NOMBREINFOR,
+        main = "",
+        col = "skyblue",
+        xlab = "Formalidad",
+        ylab = "Ingreso Promedio",
+        las = 1)
+
+# Aumentar el tamaño del título
+title(main = "Ingreso Promedio por Formalidad", cex.main = 1.6)
+
+# Colocar los valores dentro de las barras, cerca del final
+text(y = promedio_por_formalidad$INGTOT - (promedio_por_formalidad$INGTOT * 0.05),  # Ajustar para que quede dentro de la barra
+     x = bp, 
+     labels = round(promedio_por_formalidad$INGTOT, 0),  # Redondear los valores a 2 decimales
+     col = "black", cex = 0.8)  # Colocamos el texto en blanco para que contraste con el color de la barra
+```
+
+
+<!-- Lucia -->
+```{r, echo=FALSE}
+rm(list = ls()) 
+
+## Base de datos ##
+EPEN_Data <- read.csv("epen2023.csv")
+
+EPEN_Data <- EPEN_Data %>%
+  select(MES, AREA, C207, C208, C310, C311, whoraT, C366, C377, OCUP300, INGTOT, Informal_P, CCDD) %>%
+  filter(!is.na(INGTOT), !is.na(Informal_P), !is.na(whoraT))
+```
+
+```{r, echo=FALSE}
+## Categorizar variables
+# Nivel de educación
+
+EPEN_Data <- EPEN_Data %>%
+  mutate(
+    C366_cat = case_when(
+      is.na(C366) | C366 == 0 ~ "Sin información",
+      C366 == 1 ~ "Sin nivel",
+      C366 >= 2 & C366 <= 7 ~ "Básica",
+      C366 >= 8 & C366 <= 11 ~ "Medio superior",
+      C366 >= 12 ~ "Superior" )
+  )
+```
+
+```{r, echo=FALSE}
+# Departamentos
+EPEN_Data <- EPEN_Data %>%
+  mutate(
+    Departamentos = case_when(
+      CCDD == 1 ~ "Amazonas",
+      CCDD == 2 ~ "Áncash",
+      CCDD == 3 ~ "Apurímac",
+      CCDD == 4 ~ "Arequipa",
+      CCDD == 5 ~ "Ayacucho",
+      CCDD == 6 ~ "Cajamarca",
+      CCDD == 7 ~ "Callao",
+      CCDD == 8 ~ "Cusco",
+      CCDD == 9 ~ "Huancavelica",
+      CCDD == 10 ~ "Huánuco",
+      CCDD == 11 ~ "Ica",
+      CCDD == 12 ~ "Junín",
+      CCDD == 13 ~ "La Libertad",
+      CCDD == 14 ~ "Lambayeque",
+      CCDD == 15 ~ "Lima",
+      CCDD == 16 ~ "Loreto",
+      CCDD == 17 ~ "Madre de Dios",
+      CCDD == 18 ~ "Moquegua",
+      CCDD == 19 ~ "Pasco",
+      CCDD == 20 ~ "Piura",
+      CCDD == 21 ~ "Puno",
+      CCDD == 22 ~ "San Martín",
+      CCDD == 23 ~ "Tacna",
+      CCDD == 24 ~ "Tumbes",
+      CCDD == 25 ~ "Ucayali",
+      TRUE ~ "Desconocido") # Para valores no mapeados
+    )
+```
+
+```{r, echo=FALSE}
+## Logaritmo del ingreso ##
+# Sin transformación
+G_original <- ggplot(EPEN_Data, aes(x = whoraT)) +
+  geom_histogram(bins = 30, fill = "blue", alpha = 0.7) +
+  labs(title = "Distribución sin logaritmo", x = "Ingresos", y = "Frecuencia") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14) 
+  )
+```
+
+# Transformación logarítmica
+
+```{r, echo=FALSE}
+G_log <- ggplot(EPEN_Data, aes(x = log1p(whoraT))) +
+  geom_histogram(bins = 30, fill = "green", alpha = 0.7) +
+  labs(title = "Distribución con logaritmo", x = "Log(Ingresos)", y = "Frecuencia") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14) 
+  )
+
+grid.arrange(G_original, G_log, ncol = 2)
+```
+
+# Construcción de indicadores ##
+## 1. Tasa de Informalidad Nacional 
+
+```{r, echo=FALSE}
+Distribucion_informalidad_sexo <- EPEN_Data %>%
+  filter(OCUP300 == 1, Informal_P == 1) %>%  
+  group_by(C207) %>% 
+  summarise(
+    Total_informal = n()  
+  ) %>%
+  mutate(
+    Proporcion_informal = (Total_informal / sum(Total_informal)) * 100, 
+    C207 = case_when(
+      C207 == 1 ~ "Hombre",  
+      C207 == 2 ~ "Mujer"
+    )
+  )
+
+print(Distribucion_informalidad_sexo)
+```
+
+### Gráfico 
+```{r, echo=FALSE}
+
+G1 <- ggplot(Distribucion_informalidad_sexo, aes(x = C207, y = Proporcion_informal, fill = C207)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = paste0(round(Proporcion_informal, 1), "%")),  
+            vjust = -0.5, size = 4) +
+  labs(
+    title = "Distribución de Informalidad por Sexo",
+    x = "Sexo", y = "Proporción de Informales (%)",
+    fill = "Sexo"
+  ) +
+  scale_fill_manual(values = c("skyblue", "pink")) +  
+  scale_y_continuous(limits = c(0, 75), expand = c(0, 0)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text.x = element_text(size = 12),
+    legend.position = "none"  
+  )
+
+G1
+```
+
+## 2. PEA ocupada según nivel educativo
+```{r, echo=FALSE}
+
+Distribucion_ocupados_nivel <- EPEN_Data %>%
+  mutate(
+    Nivel_educativo = case_when(
+      is.na(C366) | C366 == 0 ~ "Sin información",
+      C366 == 1 ~ "Sin nivel",
+      C366 >= 2 & C366 <= 7 ~ "Básica",
+      C366 >= 8 & C366 <= 11 ~ "Medio superior",
+      C366 >= 12 ~ "Superior"
+    )
+  ) %>%
+  filter(OCUP300 == 1) %>%  # Solo personas ocupadas
+  group_by(Nivel_educativo) %>%
+  summarise(
+    Total_Ocupados = n()  # Total ocupados por nivel
+  ) %>%
+  mutate(
+    Proporcion_ocupados = (Total_Ocupados / sum(Total_Ocupados)) * 100  # Porcentaje respecto al total ocupados
+  )
+
+print(Distribucion_ocupados_nivel)
+```
+
+### Gráfico de barras para distribución de ocupación
+
+```{r, echo=FALSE}
+
+G2 <- ggplot(Distribucion_ocupados_nivel, aes(x = Nivel_educativo, y = Proporcion_ocupados, fill = Nivel_educativo)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = paste0(round(Proporcion_ocupados, 1), "%")), vjust = -0.5, size = 4) +
+  labs(
+    title = "Distribución de Ocupados por Nivel Educativo",
+    x = "Nivel Educativo", y = "Proporción de Ocupados (%)",
+    fill = "Nivel Educativo"
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+
+G2
+
+```
+
+## 3. Tasa de Informalidad Regional
+```{r, echo=FALSE}
+tasa_informalidad_region <-  EPEN_Data %>%
+  group_by(Departamentos) %>%
+  summarise(
+    informal_total = sum(Informal_P, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    tasa_informalidad = (informal_total / sum(informal_total)) * 100 
+  )
+
+print(tasa_informalidad_region)
+```
+
+### Graficar la tasa de informalidad por región
+```{r, echo=FALSE}
+G3 <- ggplot(tasa_informalidad_region, aes(x = reorder(Departamentos, -tasa_informalidad), 
+                                                                  y = tasa_informalidad, fill = Departamentos)) +
+  geom_bar(stat = "identity", show.legend = FALSE) + 
+  geom_text(aes(label = paste0(round(tasa_informalidad, 1), "%")), 
+            vjust = -0.5, size = 2.5, color = "black") + 
+  labs(
+    title = "Tasa de Informalidad por Región",
+    subtitle = "(Variación porcentual)",
+    x = "Región",
+    y = "Tasa de Informalidad (%)"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0.3, 0.2))) +
+  theme_minimal() + 
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14), 
+    plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1), 
+    axis.text.y = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  ) 
+G3
+```
+
